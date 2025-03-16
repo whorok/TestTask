@@ -30,86 +30,132 @@ namespace TestTask.Controllers
             return View();
         }
 
-        [HttpPost]
-        public async Task<IActionResult> Add(OrganizationViewModel organizationModel)
-        {
-            if (!ModelState.IsValid)
-            {
-                return View(organizationModel);
-            }
-
-            var organization = new Organization
-            {
-                INN = organizationModel.INN,
-                Name = organizationModel.Name,
-                Phone = organizationModel.Phone,
-                Email = organizationModel.Email,
-            };
-
-            await _dbContext.Organizations.AddAsync(organization);
-            try
-            {
-                await _dbContext.SaveChangesAsync();
-            }
-            catch (DbUpdateException ex)
-            {
-                if (ex.InnerException is SqlException sqlEx && sqlEx.Number == 2601)
-                {
-                    ModelState.AddModelError("INN", "Организация с таким ИНН уже существует");
-                    return View(organizationModel);
-                }
-            }
-
-            return RedirectToAction("List");
-        }
-
         [HttpGet]
-        public async Task<IActionResult> List()
-        {
-            var organizations = await _dbContext.Organizations.ToListAsync();
-
-            return View(organizations);
-        }
-
-        [HttpGet]
-        public async Task<IActionResult> Edit(Guid id)
+        public async Task<IActionResult> Upsert(Guid id)
         {
             if (id == Guid.Empty)
                 return View();
             var organization = await _dbContext.Organizations.FindAsync(id);
-            return View(organization);
+            if (organization == null)
+                return NotFound();
+
+            var organizationViewModel = new OrganizationViewModel
+            {
+                Id = organization.Id,
+                INN = organization.INN,
+                Name = organization.Name,
+                Phone = organization.Phone,
+                Email = organization.Email,
+            };
+            return View(organizationViewModel);
         }
 
         [HttpPost]
-        public async Task<IActionResult> Edit(Guid id, Organization organizationModel)
+        public async Task<IActionResult> Upsert(OrganizationViewModel organizationViewModel)
         {
-            var organization = await _dbContext.Organizations.FindAsync(organizationModel.Id);
-            if (organization is not null)
+            if (!ModelState.IsValid)
             {
-                organization.Name = organizationModel.Name;
-                organization.INN = organizationModel.INN;
-                organization.Phone = organizationModel.Phone;
-                organization.Email = organizationModel.Email;
+                return View(organizationViewModel);
+            }
+
+            // Проверка уникальности ИНН (если требуется)
+            if (await _dbContext.Organizations.AnyAsync(o =>
+                    o.Id != organizationViewModel.Id && o.INN == organizationViewModel.INN))
+            {
+                ModelState.AddModelError("INN", "ИНН уже существует");
+                return View(organizationViewModel);
+            }
+
+            // Выбор между созданием и обновлением
+            if (organizationViewModel.Id == Guid.Empty)
+                CreateOrganization(organizationViewModel);
+            else
+                await UpdateOrganization(organizationViewModel);
+
+            try
+            {
                 await _dbContext.SaveChangesAsync();
+            }
+            catch (DbUpdateException)
+            {
+                ModelState.AddModelError("Save", "Ошибка сохранения данных");
+            }
+            catch
+            {
+                return NotFound();
             }
 
             return RedirectToAction("List");
         }
 
+        private async Task UpdateOrganization(OrganizationViewModel organizationViewModel)
+        {
+            var organization = await _dbContext.Organizations.FindAsync(organizationViewModel.Id);
+            if (organization is not null)
+            {
+                organization.INN = organizationViewModel.INN;
+                organization.Name = organizationViewModel.Name;
+                organization.Phone = organizationViewModel.Phone;
+                organization.Email = organizationViewModel.Email;
+            }
+        }
+
+        private void CreateOrganization(OrganizationViewModel organizationViewModel)
+        {
+            var organization = new Organization
+            {
+                INN = organizationViewModel.INN,
+                Name = organizationViewModel.Name,
+                Phone = organizationViewModel.Phone,
+                Email = organizationViewModel.Email,
+            };
+            _dbContext.Organizations.Add(organization);
+        }
+
+
+        [HttpGet]
+        public async Task<IActionResult> List()
+        {
+            var organizations = await _dbContext.Organizations
+                .Select(x => new OrganizationViewModel
+                {
+                    Id = x.Id,
+                    INN = x.INN,
+                    Name = x.Name,
+                    Email = x.Email,
+                })
+                .ToListAsync();
+
+            return View(organizations);
+        }
+
         [HttpPost]
+        public async Task<IActionResult> Delete(List<Guid> selectedIds)
+        {
+            if (selectedIds.Count == 0)
+                return RedirectToAction("List");
+
+            var organizationsToDelete = _dbContext.Organizations.Where(o => selectedIds.Contains(o.Id));
+            _dbContext.RemoveRange(organizationsToDelete);
+
+            await _dbContext.SaveChangesAsync();
+
+            return RedirectToAction("List");
+        }
+
+        [HttpPost("Delete/{id:guid}")]
         public async Task<IActionResult> Delete(Guid id)
         {
             var organization = await _dbContext.Organizations
                 .AsNoTracking()
                 .FirstOrDefaultAsync(x => x.Id == id);
-            if (organization is not null)
-            {
-                _dbContext.Remove(organization);
-                await _dbContext.SaveChangesAsync();
-            }
+
+            if (organization is null) return NotFound();
+
+            _dbContext.Remove(organization);
+            await _dbContext.SaveChangesAsync();
 
             return RedirectToAction("List");
         }
     }
-
 }

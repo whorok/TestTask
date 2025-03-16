@@ -4,6 +4,7 @@ namespace TestTask.Models
 {
     public class OrganizationViewModel
     {
+        public Guid Id { get; set; }
 
         [Required(ErrorMessage = "Имя обязательно")]
         public required string Name { get; set; }
@@ -13,5 +14,6 @@ namespace TestTask.Models
         public required string INN { get; set; }
         public string? Email { get; set; }
         public string? Phone { get; set; }
+        public bool IsSelected { get; set; }
     }
 }

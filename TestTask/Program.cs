@@ -12,7 +12,7 @@ builder.Services.AddControllersWithViews()
     });
 
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
-options.UseSqlServer(builder.Configuration.GetConnectionString("OrganizationsListConnectionString")));
+options.UseNpgsql(builder.Configuration.GetConnectionString("OrganizationsListConnectionString")));
     //.AddScoped<IFNSApiService, FNSApiService>();
 
 var app = builder.Build();
